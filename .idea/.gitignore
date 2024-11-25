@@ -4,3 +4,6 @@
 /.idea/*
 !.idea/gradle.xml
 /gradle
+.idea/.gitignore
+.idea/gradle.xml
+.idea/misc.xml
