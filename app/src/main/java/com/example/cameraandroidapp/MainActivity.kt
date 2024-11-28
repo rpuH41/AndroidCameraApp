@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         if (allPermissionGranted()) {
-//            Toast.makeText(this, "We have Permission", Toast.LENGTH_SHORT).show()
+            Log.d(Constants.TAG, "We have all permissions")
             startCamera()
             getCurrentLocation()
         } else {
