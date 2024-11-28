@@ -7,56 +7,94 @@ import android.location.Location
 import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Log
-import android.widget.Button
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.LifecycleOwner
+import com.example.cameraandroidapp.databinding.ActivityMainBinding
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var binding: ActivityMainBinding
     private lateinit var imageCapture: ImageCapture
+    private lateinit var outputDirectory : File
+    private lateinit var cameraExecutor : ExecutorService
+    private lateinit var timePhoto : String
+    private lateinit var pathPhoto : String
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var currentLocation: Location? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        outputDirectory = getOutputDirectory()
+        cameraExecutor = Executors.newSingleThreadExecutor()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        // Запрашиваем разрешения на использование камеры и местоположения
-        val requestPermissionsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            if (permissions[Manifest.permission.CAMERA] == true && permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
-                startCamera() // Запускаем камеру, если разрешения предоставлены
-                getCurrentLocation() // Получаем текущее местоположение
-            } else {
-                Toast.makeText(this, "Camera or location permission denied", Toast.LENGTH_SHORT).show()
+        if (allPermissionGranted()) {
+//            Toast.makeText(this, "We have Permission", Toast.LENGTH_SHORT).show()
+            startCamera()
+            getCurrentLocation()
+        } else {
+            ActivityCompat.requestPermissions(this,
+                Constants.REQUIRED_PERMISSIONS,
+                Constants.REQUEST_CODE_PERMISSIONS)
+        }
+
+        binding.captureButton.setOnClickListener {
+            takePhoto()
+        }
+
+
+//        // Запрашиваем разрешения на использование камеры и местоположения
+//        val requestPermissionsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+//            if (permissions[Manifest.permission.CAMERA] == true && permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
+//                startCamera() // Запускаем камеру, если разрешения предоставлены
+//                getCurrentLocation() // Получаем текущее местоположение
+//            } else {
+//                Toast.makeText(this, "Camera or location permission denied", Toast.LENGTH_SHORT).show()
+//            }
+//        }
+
+//        // Проверяем, есть ли разрешения на использование камеры и местоположения
+//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
+//            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+//            startCamera() // Если разрешения уже есть, запускаем камеру
+//            getCurrentLocation() // Получаем текущее местоположение
+//        } else {
+//            requestPermissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION)) // Иначе запрашиваем разрешения
+//        }
+    }
+
+    private fun getOutputDirectory() : File {
+        val mediaDir = externalMediaDirs.firstOrNull()?.let {mFile ->
+            File(mFile, resources.getString(R.string.app_name)).apply {
+                mkdirs()
             }
         }
-
-        // Проверяем, есть ли разрешения на использование камеры и местоположения
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            startCamera() // Если разрешения уже есть, запускаем камеру
-            getCurrentLocation() // Получаем текущее местоположение
-        } else {
-            requestPermissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION)) // Иначе запрашиваем разрешения
-        }
-
-        // Находим кнопку захвата изображения и устанавливаем обработчик нажатия
-        val captureButton: Button = findViewById(R.id.captureButton)
-        captureButton.setOnClickListener { takePhoto() }
+        return if(mediaDir != null && mediaDir.exists())
+            mediaDir else filesDir
     }
+
+    private fun allPermissionGranted() =
+        Constants.REQUIRED_PERMISSIONS.all {
+            ContextCompat.checkSelfPermission(baseContext, it) ==
+                    PackageManager.PERMISSION_GRANTED
+        }
 
     // Метод для инициализации и запуска камеры
     private fun startCamera() {
@@ -161,5 +199,10 @@ class MainActivity : AppCompatActivity() {
                 Log.d("CameraXApp", msg) // Логируем успешный захват изображения
             }
         })
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        cameraExecutor.shutdown()
     }
 }
