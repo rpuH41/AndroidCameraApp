@@ -12,6 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -80,31 +81,42 @@ class MainActivity : AppCompatActivity() {
                     PackageManager.PERMISSION_GRANTED
         }
 
-    // Метод для инициализации и запуска камеры
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == Constants.REQUEST_CODE_PERMISSIONS) {
+            if (allPermissionGranted()) {
+                startCamera()
+                getCurrentLocation()
+            } else {
+                Toast.makeText(this, "Permissions not granted by the user",
+                    Toast.LENGTH_SHORT).show()
+                finish()
+            }
+        }
+    }
+
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
         cameraProviderFuture.addListener({
-            // Получаем провайдер камеры
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-
-            // Создаем объект для захвата изображения
+            val preview = Preview.Builder().build()
+                .also {mPreview -> mPreview.surfaceProvider = binding.previewView.surfaceProvider }
             imageCapture = ImageCapture.Builder().build()
-
-            // Выбираем заднюю камеру по умолчанию
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
             try {
-                // Отвязываем все привязанные случаи использования и привязываем новый случай использования для захвата изображения
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this as LifecycleOwner, cameraSelector, imageCapture)
-            } catch (exc: Exception) {
-                Log.e("CameraXApp", "Use case binding failed", exc)
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture)
+            } catch (e: Exception) {
+                Log.e(Constants.TAG, "startCamera Fail: ", e)
             }
         }, ContextCompat.getMainExecutor(this))
     }
 
-    // Метод для получения текущего местоположения
     private fun getCurrentLocation() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             fusedLocationClient.lastLocation
