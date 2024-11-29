@@ -59,25 +59,9 @@ class MainActivity : AppCompatActivity() {
             takePhoto()
         }
 
-
-//        // Запрашиваем разрешения на использование камеры и местоположения
-//        val requestPermissionsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-//            if (permissions[Manifest.permission.CAMERA] == true && permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
-//                startCamera() // Запускаем камеру, если разрешения предоставлены
-//                getCurrentLocation() // Получаем текущее местоположение
-//            } else {
-//                Toast.makeText(this, "Camera or location permission denied", Toast.LENGTH_SHORT).show()
-//            }
-//        }
-
-//        // Проверяем, есть ли разрешения на использование камеры и местоположения
-//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
-//            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-//            startCamera() // Если разрешения уже есть, запускаем камеру
-//            getCurrentLocation() // Получаем текущее местоположение
-//        } else {
-//            requestPermissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION)) // Иначе запрашиваем разрешения
-//        }
+        binding.galleryButton.setOnClickListener {
+            Toast.makeText(this, "Пока не сделано", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun getOutputDirectory() : File {
