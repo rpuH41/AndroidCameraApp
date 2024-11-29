@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.location.Location
+import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Log
@@ -17,12 +18,13 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.exifinterface.media.ExifInterface
-import androidx.lifecycle.LifecycleOwner
 import com.example.cameraandroidapp.databinding.ActivityMainBinding
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import java.io.File
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -117,6 +119,57 @@ class MainActivity : AppCompatActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    private fun takePhoto() {
+        timePhoto = SimpleDateFormat(Constants.FILE_NAME_FORMAT, Locale.getDefault())
+            .format(System.currentTimeMillis())
+        val photoFile = File (outputDirectory, SimpleDateFormat(Constants.FILE_NAME_FORMAT,
+            Locale.getDefault())
+            .format(System.currentTimeMillis()) + ".jpg")
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+        imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+
+            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                pathPhoto = Uri.fromFile(photoFile).toString()
+                val msgSaved = "Photo saved"
+                Toast.makeText(this@MainActivity, "$msgSaved $pathPhoto", Toast.LENGTH_LONG)
+                    .show()
+
+                // Добавляем GPS-данные, если местоположение доступно
+                currentLocation?.let { location ->
+                    try {
+                        val exif = ExifInterface(photoFile.path)
+                        setGpsExifAttributes(exif, location)
+                    } catch (e: IOException) {
+                        Log.e("CameraXApp", "Failed to set GPS metadata", e)
+                    }
+                }
+
+                // Добавляем изображение в медиабазу данных, чтобы оно отображалось в галерее
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, photoFile.name)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
+                }
+
+                contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)?.let { uri ->
+                    contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        photoFile.inputStream().copyTo(outputStream)
+                    }
+                }
+
+                val msg = "Photo capture succeeded"
+                Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show() // Показываем сообщение об успешном захвате
+                Log.d("CameraXApp", msg) // Логируем успешный захват изображения
+            }
+
+            override fun onError(e: ImageCaptureException) {
+                Log.e(Constants.TAG, "Photo capture failed: ${e.message}", e)
+            }
+        })
+    }
+
     private fun getCurrentLocation() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             fusedLocationClient.lastLocation
@@ -151,50 +204,6 @@ class MainActivity : AppCompatActivity() {
         exif.setAttribute(ExifInterface.TAG_GPS_ALTITUDE, (location.altitude.toInt()).toString())
         exif.setAttribute(ExifInterface.TAG_GPS_ALTITUDE_REF, if (location.altitude >= 0) "0" else "1")
         exif.saveAttributes()
-    }
-
-    // Метод для захвата изображения
-    private fun takePhoto() {
-        val photoFile = File(externalMediaDirs.firstOrNull(), "IMG_${System.currentTimeMillis()}.jpg")
-
-        // Опции для вывода файла
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-
-        // Захватываем изображение
-        imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this), object : ImageCapture.OnImageSavedCallback {
-            override fun onError(exc: ImageCaptureException) {
-                Log.e("CameraXApp", "Photo capture failed: ${exc.message}", exc) // Логируем ошибку при захвате изображения
-            }
-
-            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                // Добавляем GPS-данные, если местоположение доступно
-                currentLocation?.let { location ->
-                    try {
-                        val exif = ExifInterface(photoFile.path)
-                        setGpsExifAttributes(exif, location)
-                    } catch (e: IOException) {
-                        Log.e("CameraXApp", "Failed to set GPS metadata", e)
-                    }
-                }
-
-                // Добавляем изображение в медиабазу данных, чтобы оно отображалось в галерее
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, photoFile.name)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
-                }
-
-                contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)?.let { uri ->
-                    contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        photoFile.inputStream().copyTo(outputStream)
-                    }
-                }
-
-                val msg = "Photo capture succeeded"
-                Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show() // Показываем сообщение об успешном захвате
-                Log.d("CameraXApp", msg) // Логируем успешный захват изображения
-            }
-        })
     }
 
     override fun onDestroy() {
