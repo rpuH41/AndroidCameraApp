@@ -4,85 +4,172 @@ import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.location.Location
+import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Log
-import android.widget.Button
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.exifinterface.media.ExifInterface
-import androidx.lifecycle.LifecycleOwner
+import com.example.cameraandroidapp.databinding.ActivityMainBinding
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import java.io.File
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var binding: ActivityMainBinding
     private lateinit var imageCapture: ImageCapture
+    private lateinit var outputDirectory : File
+    private lateinit var cameraExecutor : ExecutorService
+    private lateinit var timePhoto : String
+    private lateinit var pathPhoto : String
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var currentLocation: Location? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        outputDirectory = getOutputDirectory()
+        cameraExecutor = Executors.newSingleThreadExecutor()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        // Запрашиваем разрешения на использование камеры и местоположения
-        val requestPermissionsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            if (permissions[Manifest.permission.CAMERA] == true && permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
-                startCamera() // Запускаем камеру, если разрешения предоставлены
-                getCurrentLocation() // Получаем текущее местоположение
-            } else {
-                Toast.makeText(this, "Camera or location permission denied", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // Проверяем, есть ли разрешения на использование камеры и местоположения
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            startCamera() // Если разрешения уже есть, запускаем камеру
-            getCurrentLocation() // Получаем текущее местоположение
+        if (allPermissionGranted()) {
+            Log.d(Constants.TAG, "We have all permissions")
+            startCamera()
+            getCurrentLocation()
         } else {
-            requestPermissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION)) // Иначе запрашиваем разрешения
+            ActivityCompat.requestPermissions(this,
+                Constants.REQUIRED_PERMISSIONS,
+                Constants.REQUEST_CODE_PERMISSIONS)
         }
 
-        // Находим кнопку захвата изображения и устанавливаем обработчик нажатия
-        val captureButton: Button = findViewById(R.id.captureButton)
-        captureButton.setOnClickListener { takePhoto() }
+        binding.captureButton.setOnClickListener {
+            takePhoto()
+        }
+
+        binding.galleryButton.setOnClickListener {
+            Toast.makeText(this, "Пока не сделано", Toast.LENGTH_LONG).show()
+        }
     }
 
-    // Метод для инициализации и запуска камеры
+    private fun getOutputDirectory() : File {
+        val mediaDir = externalMediaDirs.firstOrNull()?.let {mFile ->
+            File(mFile, resources.getString(R.string.app_name)).apply {
+                mkdirs()
+            }
+        }
+        return if(mediaDir != null && mediaDir.exists())
+            mediaDir else filesDir
+    }
+
+    private fun allPermissionGranted() =
+        Constants.REQUIRED_PERMISSIONS.all {
+            ContextCompat.checkSelfPermission(baseContext, it) ==
+                    PackageManager.PERMISSION_GRANTED
+        }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == Constants.REQUEST_CODE_PERMISSIONS) {
+            if (allPermissionGranted()) {
+                startCamera()
+                getCurrentLocation()
+            } else {
+                Toast.makeText(this, "Permissions not granted by the user",
+                    Toast.LENGTH_SHORT).show()
+                finish()
+            }
+        }
+    }
+
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
         cameraProviderFuture.addListener({
-            // Получаем провайдер камеры
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-
-            // Создаем объект для захвата изображения
+            val preview = Preview.Builder().build()
+                .also {mPreview -> mPreview.surfaceProvider = binding.previewView.surfaceProvider }
             imageCapture = ImageCapture.Builder().build()
-
-            // Выбираем заднюю камеру по умолчанию
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
             try {
-                // Отвязываем все привязанные случаи использования и привязываем новый случай использования для захвата изображения
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this as LifecycleOwner, cameraSelector, imageCapture)
-            } catch (exc: Exception) {
-                Log.e("CameraXApp", "Use case binding failed", exc)
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageCapture)
+            } catch (e: Exception) {
+                Log.e(Constants.TAG, "startCamera Fail: ", e)
             }
         }, ContextCompat.getMainExecutor(this))
     }
 
-    // Метод для получения текущего местоположения
+    private fun takePhoto() {
+        timePhoto = SimpleDateFormat(Constants.FILE_NAME_FORMAT, Locale.getDefault())
+            .format(System.currentTimeMillis())
+        val photoFile = File (outputDirectory, SimpleDateFormat(Constants.FILE_NAME_FORMAT,
+            Locale.getDefault())
+            .format(System.currentTimeMillis()) + ".jpg")
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+        imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+
+            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                pathPhoto = Uri.fromFile(photoFile).toString()
+                val msgSaved = "Photo saved"
+                Toast.makeText(this@MainActivity, "$msgSaved $pathPhoto", Toast.LENGTH_LONG)
+                    .show()
+
+                // Добавляем GPS-данные, если местоположение доступно
+                currentLocation?.let { location ->
+                    try {
+                        val exif = ExifInterface(photoFile.path)
+                        setGpsExifAttributes(exif, location)
+                    } catch (e: IOException) {
+                        Log.e("CameraXApp", "Failed to set GPS metadata", e)
+                    }
+                }
+
+                // Добавляем изображение в медиабазу данных, чтобы оно отображалось в галерее
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, photoFile.name)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
+                }
+
+                contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)?.let { uri ->
+                    contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        photoFile.inputStream().copyTo(outputStream)
+                    }
+                }
+
+                val msg = "Photo capture succeeded"
+                Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show() // Показываем сообщение об успешном захвате
+                Log.d("CameraXApp", msg) // Логируем успешный захват изображения
+            }
+
+            override fun onError(e: ImageCaptureException) {
+                Log.e(Constants.TAG, "Photo capture failed: ${e.message}", e)
+            }
+        })
+    }
+
     private fun getCurrentLocation() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             fusedLocationClient.lastLocation
@@ -119,47 +206,8 @@ class MainActivity : AppCompatActivity() {
         exif.saveAttributes()
     }
 
-    // Метод для захвата изображения
-    private fun takePhoto() {
-        val photoFile = File(externalMediaDirs.firstOrNull(), "IMG_${System.currentTimeMillis()}.jpg")
-
-        // Опции для вывода файла
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-
-        // Захватываем изображение
-        imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this), object : ImageCapture.OnImageSavedCallback {
-            override fun onError(exc: ImageCaptureException) {
-                Log.e("CameraXApp", "Photo capture failed: ${exc.message}", exc) // Логируем ошибку при захвате изображения
-            }
-
-            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                // Добавляем GPS-данные, если местоположение доступно
-                currentLocation?.let { location ->
-                    try {
-                        val exif = ExifInterface(photoFile.path)
-                        setGpsExifAttributes(exif, location)
-                    } catch (e: IOException) {
-                        Log.e("CameraXApp", "Failed to set GPS metadata", e)
-                    }
-                }
-
-                // Добавляем изображение в медиабазу данных, чтобы оно отображалось в галерее
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, photoFile.name)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
-                }
-
-                contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)?.let { uri ->
-                    contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        photoFile.inputStream().copyTo(outputStream)
-                    }
-                }
-
-                val msg = "Photo capture succeeded"
-                Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show() // Показываем сообщение об успешном захвате
-                Log.d("CameraXApp", msg) // Логируем успешный захват изображения
-            }
-        })
+    override fun onDestroy() {
+        super.onDestroy()
+        cameraExecutor.shutdown()
     }
 }
