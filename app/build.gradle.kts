@@ -36,13 +36,6 @@ android {
 }
 
 dependencies {
-    implementation ("com.google.android.gms:play-services-location:21.3.0")
-    implementation ("androidx.camera:camera-core:1.4.0")
-    implementation ("androidx.camera:camera-camera2:1.4.0")
-    implementation ("androidx.camera:camera-lifecycle:1.4.0")
-    implementation ("androidx.camera:camera-view:1.4.0")
-    implementation ("androidx.camera:camera-extensions:1.4.0")
-    implementation ("androidx.exifinterface:exifinterface:1.3.7")
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
