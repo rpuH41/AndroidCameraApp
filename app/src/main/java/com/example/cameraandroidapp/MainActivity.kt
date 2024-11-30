@@ -23,7 +23,7 @@ import com.google.android.gms.location.LocationServices
 import java.io.File
 import java.io.IOException
 
-class MainActivity : AppCompatActivity() {
+class пуеMainActivity : AppCompatActivity() {
 
     private lateinit var imageCapture: ImageCapture
     private lateinit var fusedLocationClient: FusedLocationProviderClient
